@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rubik 3x3 Solver 3D</title>
+<style>
+:root{--bg:#f6f6f4;--fg:#1c1c1a;--card:#fff;--line:#d9d9d4;--acc:#2d5bd6;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171716;--fg:#ececea;--card:#232321;--line:#3a3a36;--acc:#7a9bff;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:.2em 0}
+p.s{margin:.2em 0 1em;opacity:.75;font-size:.92rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.net{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;max-width:480px;margin:0 auto}
+.st{aspect-ratio:1;border-radius:4px;border:1px solid rgba(0,0,0,.35);background:var(--line);cursor:pointer;padding:0}
+.st.c{cursor:default;outline:2px solid var(--acc);outline-offset:-2px}
+.pal{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px}
+.pal button{width:40px;height:40px;border-radius:50%;border:2px solid var(--line);cursor:pointer}
+.pal button.on{border-color:var(--fg);box-shadow:0 0 0 3px var(--acc)}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+.btn{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.btn.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+.btn:disabled{opacity:.5;cursor:default}
+#msg{text-align:center;min-height:1.5em;margin-top:10px}
+.err{color:#d33}
+.moves{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:10px 0}
+.mv{padding:4px 9px;border-radius:6px;border:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;cursor:pointer;background:var(--card);color:var(--fg)}
+.mv.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.hide{display:none}
+.scene{height:340px;perspective:900px;position:relative;touch-action:none;cursor:grab;overflow:hidden}
+.cube{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d}
+.cb{position:absolute;left:-30px;top:-30px;width:60px;height:60px;transform-style:preserve-3d}
+.fc{position:absolute;inset:0;background:#111;border:3px solid #111;box-sizing:border-box;border-radius:8px;background-clip:padding-box}
+.hint{text-align:center;font-size:.8rem;opacity:.65}
+</style>
+</head>
+<body>
+<main>
+<h1>Rubik 3x3 Solver</h1>
+<p class="s">Pilih warna, klik kotak untuk mengisi warna, lalu tekan Solve.</p>
+
+<div class="card">
+  <div class="pal" id="pal"></div>
+  <div class="net" id="net"></div>
+  <div class="row">
+    <button class="btn p" id="solve">Solve</button>
+    <button class="btn" id="demo">Isi contoh acak</button>
+    <button class="btn" id="reset">Kosongkan</button>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<div class="card hide" id="res">
+  <div style="text-align:center"><b id="cnt"></b></div>
+  <div class="moves" id="moves"></div>
+  <div class="scene" id="scene"><div class="cube" id="cube"></div></div><div class="hint">Geser untuk memutar sudut pandang</div>
+  <div class="row">
+    <button class="btn" id="first">⏮ Ulang</button>
+    <button class="btn" id="prev">◀ Prev</button>
+    <button class="btn p" id="play">▶ Play</button>
+    <button class="btn" id="next">Next ▶</button>
+  </div>
+</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.js"></script>
+<script>
+(function(){
+var ORDER="URFDLB";
+var COL={U:"#ffffff",R:"#d62d20",F:"#1fa34a",D:"#ffd500",L:"#ff8c1a",B:"#1a5bd6"};
+var NAME={U:"Putih",R:"Merah",F:"Hijau",D:"Kuning",L:"Oranye",B:"Biru"};
+var POS={U:[3,0],L:[0,3],F:[3,3],R:[6,3],B:[9,3],D:[3,6]};
+var state=blank(),cur="U",sol=[],idx=0,timer=null,ready=false;
+var $=function(i){return document.getElementById(i)};
+
+function blank(){var s=[];for(var f=0;f<6;f++)for(var i=0;i<9;i++)s.push(i===4?ORDER[f]:"");return s}
+
+function draw(el,st,editable){
+  el.innerHTML="";
+  var cells={};
+  ORDER.split("").forEach(function(f,fi){
+    for(let i=0;i<9;i++){
+      var c=POS[f][0]*1+(i%3), r=POS[f][1]+Math.floor(i/3);
+      var b=document.createElement("button");
+      b.className="st"+(i===4?" c":"");
+      b.style.gridColumn=(c+1)+"/span 1";b.style.gridRow=(r+1)+"/span 1";
+      var v=st[fi*9+i];
+      if(v)b.style.background=COL[v];
+      if(editable&&i!==4){b.onclick=function(){st[fi*9+i]=cur;draw(el,st,true);$("msg").textContent=""};}
+      else b.disabled=false;
+      el.appendChild(b);
+    }
+  });
+  el.style.gridTemplateRows="repeat(9,auto)";
+}
+
+function pal(){
+  var p=$("pal");p.innerHTML="";
+  ORDER.split("").forEach(function(f){
+    var b=document.createElement("button");
+    b.style.background=COL[f];b.title=NAME[f];b.setAttribute("aria-label",NAME[f]);
+    if(f===cur)b.className="on";
+    b.onclick=function(){cur=f;pal()};
+    p.appendChild(b);
+  });
+}
+
+function say(t,e){var m=$("msg");m.textContent=t;m.className=e?"err":""}
+
+function validate(){
+  var cnt={};
+  for(var i=0;i<54;i++){
+    if(!state[i]){say("Masih ada stiker yang belum diisi.",1);return false}
+    cnt[state[i]]=(cnt[state[i]]||0)+1;
+  }
+  for(var k in cnt){if(cnt[k]!==9){say("Warna "+NAME[k]+" ada "+cnt[k]+" stiker, seharusnya 9.",1);return false}}
+  return true;
+}
+
+function solve(){
+  if(!validate())return;
+  if(typeof Cube==="undefined"){say("Library solver gagal dimuat. Cek koneksi internet lalu muat ulang.",1);return}
+  $("solve").disabled=true;say("Menyiapkan solver, tunggu beberapa detik...");
+  setTimeout(function(){
+    try{
+      if(!ready){Cube.initSolver();ready=true}
+      var s=state.join("");
+      var cube=Cube.fromString(s);
+      if(cube.isSolved()){say("Kubus sudah dalam keadaan selesai.");$("solve").disabled=false;return}
+      var r=cube.solve();
+      if(r===null||r===undefined||r===false)throw new Error("x");
+      sol=String(r).trim().split(/\s+/).filter(Boolean);
+      show();say("");
+    }catch(e){
+      say("Konfigurasi ini tidak mungkin terjadi pada kubus asli. Periksa lagi warna yang kamu isi (biasanya ada stiker yang tertukar).",1);
+    }
+    $("solve").disabled=false;
+  },60);
+}
+
+var S=60,cubies=[],busy=false,rx=-25,ry=-35;
+var DIR={R:["X",1,0,1],L:["X",-1,0,-1],U:["Y",-1,1,-1],D:["Y",1,1,1],F:["Z",1,2,1],B:["Z",-1,2,-1]};
+var FT={F:"translateZ(30px)",B:"rotateY(180deg) translateZ(30px)",R:"rotateY(90deg) translateZ(30px)",L:"rotateY(-90deg) translateZ(30px)",U:"rotateX(90deg) translateZ(30px)",D:"rotateX(-90deg) translateZ(30px)"};
+function pos(f,r,c){return {U:[c-1,-1,r-1],R:[1,r-1,1-c],F:[c-1,r-1,1],D:[c-1,1,1-r],L:[-1,r-1,c-1],B:[1-c,r-1,-1]}[f]}
+function mat(c){var M=c.M,p=c.p;return "matrix3d("+[M[0][0],M[1][0],M[2][0],0,M[0][1],M[1][1],M[2][1],0,M[0][2],M[1][2],M[2][2],0,p[0]*S,p[1]*S,p[2]*S,1].join(",")+")"}
+function rm(ax,deg){var t=deg*Math.PI/180,c=Math.round(Math.cos(t)),s=Math.round(Math.sin(t));
+  return ax==="X"?[[1,0,0],[0,c,-s],[0,s,c]]:ax==="Y"?[[c,0,s],[0,1,0],[-s,0,c]]:[[c,-s,0],[s,c,0],[0,0,1]]}
+function mv3(R,v){return [0,1,2].map(function(i){return R[i][0]*v[0]+R[i][1]*v[1]+R[i][2]*v[2]})}
+function mm(A,B){return [0,1,2].map(function(i){return [0,1,2].map(function(j){return A[i][0]*B[0][j]+A[i][1]*B[1][j]+A[i][2]*B[2][j]})})}
+function build(){
+  var cube=$("cube");cube.innerHTML="";cubies=[];busy=false;
+  for(var x=-1;x<=1;x++)for(var y=-1;y<=1;y++)for(var z=-1;z<=1;z++){
+    var el=document.createElement("div");el.className="cb";var c={el:el,p:[x,y,z],M:[[1,0,0],[0,1,0],[0,0,1]],f:{}};
+    "URFDLB".split("").forEach(function(L){var d=document.createElement("div");d.className="fc";d.style.transform=FT[L];el.appendChild(d);c.f[L]=d});
+    cubies.push(c);cube.appendChild(el);el.style.transform=mat(c);
+  }
+  for(var i=0;i<54;i++){
+    var f=ORDER[Math.floor(i/9)],j=i%9,p=pos(f,Math.floor(j/3),j%3);
+    cubies.forEach(function(c){if(c.p[0]===p[0]&&c.p[1]===p[1]&&c.p[2]===p[2])c.f[f].style.background=COL[state[i]]});
+  }
+  view();
+}
+function view(){$("cube").style.transform="rotateX("+rx+"deg) rotateY("+ry+"deg)"}
+function anim(m,cb){
+  var d=DIR[m[0]],q=m[1]==="'"?-1:m[1]==="2"?2:1,tot=d[1]*q*90,dur=q===2?700:450;
+  var layer=cubies.filter(function(c){return c.p[d[2]]===d[3]});
+  busy=true;var t0=performance.now();
+  (function tick(now){
+    var t=Math.min(1,(now-t0)/dur),e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    if(t<1){layer.forEach(function(c){c.el.style.transform="rotate"+d[0]+"("+(tot*e)+"deg) "+mat(c)});requestAnimationFrame(tick);return}
+    var R=rm(d[0],tot);
+    layer.forEach(function(c){c.p=mv3(R,c.p);c.M=mm(R,c.M);c.el.style.transform=mat(c)});
+    busy=false;cb&&cb();
+  })(t0);
+}
+function inv(m){return m[1]==="'"?m[0]:m[1]==="2"?m:m[0]+"'"}
+function show(){
+  stop();idx=0;
+  $("res").classList.remove("hide");
+  $("cnt").textContent="Solusi: "+sol.length+" langkah";
+  var m=$("moves");m.innerHTML="";
+  sol.forEach(function(x){var b=document.createElement("span");b.className="mv";b.textContent=x;m.appendChild(b)});
+  build();mark();
+  $("res").scrollIntoView({behavior:"smooth"});
+}
+function mark(){var ms=$("moves").children;for(var i=0;i<ms.length;i++)ms[i].className="mv"+(i===idx-1?" on":"")}
+function next(cb){if(busy||idx>=sol.length){return false}anim(sol[idx],function(){idx++;mark();cb&&cb()});return true}
+function prev(){if(busy||idx<=0)return;anim(inv(sol[idx-1]),function(){idx--;mark()})}
+function stop(){timer=null;$("play").textContent="▶ Play"}
+function play(){
+  if(timer){stop();return}
+  if(busy)return;
+  if(idx>=sol.length){build();idx=0;mark()}
+  timer=1;$("play").textContent="⏸ Pause";
+  (function loop(){if(!timer)return;if(!next(function(){setTimeout(loop,150)}))stop()})();
+}
+(function(){var sc=$("scene"),dn=false,lx=0,ly=0;
+  sc.onpointerdown=function(e){dn=true;lx=e.clientX;ly=e.clientY;sc.setPointerCapture(e.pointerId)};
+  sc.onpointermove=function(e){if(!dn)return;ry+=(e.clientX-lx)*.6;rx-=(e.clientY-ly)*.6;lx=e.clientX;ly=e.clientY;view()};
+  sc.onpointerup=function(){dn=false};
+})();
+
+$("solve").onclick=solve;
+$("reset").onclick=function(){state=blank();draw($("net"),state,true);$("res").classList.add("hide");stop();say("")};
+$("demo").onclick=function(){
+  if(typeof Cube==="undefined"){say("Library belum dimuat.",1);return}
+  var mv=["U","D","R","L","F","B"],suf=["","'","2"],s=[];
+  for(var i=0;i<20;i++)s.push(mv[Math.floor(Math.random()*6)]+suf[Math.floor(Math.random()*3)]);
+  var c=new Cube();c.move(s.join(" "));
+  state=c.asString().split("");draw($("net"),state,true);say("Contoh terisi. Tekan Solve.");
+};
+$("first").onclick=function(){stop();idx=0;build();mark()};
+$("prev").onclick=function(){stop();prev()};
+$("next").onclick=function(){stop();next()};
+$("play").onclick=play;
+
+pal();draw($("net"),state,true);
+})();
+</script>
+</body>
+</html>
